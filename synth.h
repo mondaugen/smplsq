@@ -38,13 +38,13 @@ typedef struct synth_vc_init_t {
 } synth_vc_init_t;
 
 #define SYNTH_VC_INIT_DEFAULT (synth_vc_init_t) { \
-    .freq = 440; \
-    .a = 0.01; \
-    .d = 0.01; \
-    .s = 0.5; \
-    .r = 0.5; \
-    .max_amp = 1.; \
-    .sus_samp = 0.5; \
+    .freq = 440, \
+    .a = 0.01, \
+    .d = 0.01, \
+    .s = 0.5, \
+    .r = 0.5, \
+    .max_amp = 1., \
+    .sus_amp = 0.5, \
 }
 
 err_t synth_vc_init_from_str(synth_vc_init_t *svi, char *str);

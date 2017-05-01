@@ -12,7 +12,7 @@ err_t synth_vc_init_from_str(synth_vc_init_t *svi, char *str)
         &svi->s,
         &svi->r,
         &svi->max_amp,
-        &svi->sus_samp);
+        &svi->sus_amp);
     return err_NONE;
 }
 
@@ -72,7 +72,7 @@ err_t synth_vc_proc(synth_vc_t *s, synth_vc_proc_t *sp, f64_t *out, size_t nsamp
         size_t nxt_smp = (size_t)smp_cur + 1;
         *out += (sp->wt[(size_t)smp_cur] 
                 + sp->wt[nxt_smp >= sp->len ? 0 : nxt_smp]*diff)
-            * adsr_amp(tm_cur,sp->env.a,sp->env.d,sp->env.s,sp->env.r,sp->env.max_amp,sp->env.sus_amp);
+            * adsr_amp(tm_cur,s->env.a,s->env.d,s->env.s,s->env.r,s->env.max_amp,s->env.sus_amp);
         tm_cur += t_s;
         out++;
         smp_cur += smp_inc;

@@ -13,7 +13,7 @@ typedef struct seq_event_t {
         f64_t s;
         f64_t r;
         f64_t max_amp; /* maximum amplitude */
-        f64_t sus_samp /* sustain amplitude */
+        f64_t sus_amp; /* sustain amplitude */
     } env;
 } seq_event_t;
 
