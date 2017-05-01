@@ -1,24 +1,4 @@
-#include "types.h"
-#include "defs.h"
-
-typedef struct seq_event_t {
-    f64_t freq;
-    struct {
-        f64_t a;
-        f64_t d;
-        f64_t s;
-        f64_t r;
-        f64_t max_amp; /* maximum amplitude */
-        f64_t sus_samp /* sustain amplitude */
-    } env;
-} seq_event_t;
-
-typedef struct seq_t {
-    seq_event_t *events;
-    f64_t tick_len; /* in samples */
-    size_t _seq_len;
-    size_t _n_events_per_tick;
-} seq_t;
+#include "seq.h"
 
 err_t seq_init(seq_t *s, size_t seq_len, size_t n_events_per_tick, f64_t tick_len)
 {
@@ -30,6 +10,12 @@ err_t seq_init(seq_t *s, size_t seq_len, size_t n_events_per_tick, f64_t tick_le
     s->_seq_len = seq_len;
     x->_n_events_per_tick = n_events_per_tick;
     return err_EINVAL;
+}
+
+void seq_destroy(seq_t *s)
+{
+    _F(s->events);
+    _MZ(s,seq_t,1);
 }
 
 err_t seq_add_event(seq_t *s, seq_event_t *e, size_t tick)
@@ -50,7 +36,8 @@ err_t seq_add_event(seq_t *s, seq_event_t *e, size_t tick)
 
 
 /* Removes event if cmp function returns 0.
- * Returns event so it can be freed if need be or NULL if not found. */
+ * Returns event so it can be freed if need be or NULL if not found. 
+ * If cmp NULL then any event at the tick is removed. */
 seq_event_t *seq_remove_event(seq_t *, size_t tick, int (*cmp)(seq_evnt_t *, void*), void *data)
 {
     if (tick >= s->_seq_len) {
@@ -59,7 +46,11 @@ seq_event_t *seq_remove_event(seq_t *, size_t tick, int (*cmp)(seq_evnt_t *, voi
     size_t n = 0;
     do {
         if (s->events[s->_n_events_per_tick * tick + n]) {
-            if (cmp(s->events[s->_n_events_per_tick * tick + n],data) == 0) {
+            int dorm = 0;
+            if (cmp) {
+                dorm = cmp(s->events[s->_n_events_per_tick * tick + n],data);
+            }
+            if (dorm == 0) {
                 seq_evnt_t *tmp = s->events[s->_n_events_per_tick * tick + n];
                 s->events[s->_n_events_per_tick * tick + n] = NULL;
                 return tmp;
@@ -68,6 +59,16 @@ seq_event_t *seq_remove_event(seq_t *, size_t tick, int (*cmp)(seq_evnt_t *, voi
         n++;
     } while (n < s->_n_evnts_per_tick);
     return NULL;
+}
+
+void seq_remove_all_events(seq_t *s)
+{
+    for (size_t n; n < s->_seq_len; n++) {
+        seq_event_t *se;
+        while ((se = seq_remove_event(s,n,NULL,NULL))) {
+            seq_event_free(se);
+        }
+    }
 }
 
 int seq_event_chk_freq(seq_event_t *s, f64_t freq)

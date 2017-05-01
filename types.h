@@ -1,5 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H 
 
-typedef double f64_t
+#include <stddef.h> 
+
+typedef float f64_t;
+
 #endif /* TYPES_H */

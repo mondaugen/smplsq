@@ -1,48 +1,36 @@
 /* A simple synthesizer */
+#include "synth.h" 
+#include <stdio.h> 
 
-typedef struct synth_vc_t {
-    int playing;
-    f64_t freq;
-    struct {
-        f64_t a;
-        f64_t d;
-        f64_t s;
-        f64_t r;
-        f64_t max_amp; /* maximum amplitude */
-        f64_t sus_samp /* sustain amplitude */
-    } env;
-    f64_t _tot_tm; /* total time (sum of a,d,sr) */
-    f64_t _phs;    /* current phase [0-1] */
-    f64_t _tm;     /* current time */
-} synth_vc_t;
-
-typedef struct synth_vc_proc_t {
-    f64_t sr; /* sample rate */
-    f64_t *wt; /* wavetable */
-    size_t len; /* length in samples */
-} synth_vc_proc_t;
+err_t synth_vc_init_from_str(synth_vc_init_t *svi, char *str)
+{
+    *svi = SYNTH_VC_INIT_DEFAULT;
+    sscanf(str,"%f %f %f %f %f %f %f",
+        &svi->freq,
+        &svi->a,
+        &svi->d,
+        &svi->s,
+        &svi->r,
+        &svi->max_amp,
+        &svi->sus_samp);
+    return err_NONE;
+}
 
 err_t synth_vc_init(synth_vc_t *s,
-                    f64_t freq,
-                    f64_t a,
-                    f64_t d,
-                    f64_t s,
-                    f64_t r,
-                    f64_t max_amp,
-                    f64_t sus_samp
-                    )
+                    synth_vc_init_t *spi)
 {
-    if ((a < 0) || (d < 0) || (s < 0) || (r < 0)) {
+    if ((spi->a < 0) || (spi->d < 0) || (spi->s < 0) || (spi->r < 0)) {
         return err_EINVAL;
     }
     _MZ(s,synth_vc_t,1);
-    s->freq = freq;
-    s->env.a    = a;
-    s->env.d    = d;
-    s->env.s    = s;
-    s->env.r    = r;
-    s->env.max_amp    = max_amp;
-    s->env.sus_amp    = sus_amp;
+    s->freq = spi->freq;
+    s->env.a = spi->a;
+    s->env.d = spi->d;
+    s->env.s = spi->s;
+    s->env.r = spi->r;
+    s->env.max_amp = spi->max_amp;
+    s->env.sus_amp = spi->sus_amp;
+    s->_tot_tm = spi->a + spi->d + spi->s + spi->r;
     return err_NONE;
 }
 
@@ -73,16 +61,19 @@ err_t synth_vc_proc(synth_vc_t *s, synth_vc_proc_t *sp, f64_t *out, size_t nsamp
     f64_t smp_inc = s->freq/(sp->sr/sp->len),
           smp_cur = s->_phs*sp->len,
           tm_cur = s->_tm;
+    f64_t t_s = sp->sr; /* sample period */
     for (n = 0; n < nsamps; n++) {
         if (tm_cur > s->_tot_tm) {
             s->playing = 0;
             break;
         }
+        /* linear interpolation */
         f64_t diff = smp_cur - (size_t)smp_cur;
         size_t nxt_smp = (size_t)smp_cur + 1;
         *out += (sp->wt[(size_t)smp_cur] 
                 + sp->wt[nxt_smp >= sp->len ? 0 : nxt_smp]*diff)
             * adsr_amp(tm_cur,sp->env.a,sp->env.d,sp->env.s,sp->env.r,sp->env.max_amp,sp->env.sus_amp);
+        tm_cur += t_s;
         out++;
         smp_cur += smp_inc;
         while (smp_cur >= sp->len) {
