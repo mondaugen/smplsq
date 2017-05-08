@@ -5,14 +5,16 @@
 err_t synth_vc_init_from_str(synth_vc_init_t *svi, char *str)
 {
     *svi = SYNTH_VC_INIT_DEFAULT;
-    sscanf(str,"%f %f %f %f %f %f %f",
-        &svi->freq,
-        &svi->a,
-        &svi->d,
-        &svi->s,
-        &svi->r,
-        &svi->max_amp,
-        &svi->sus_amp);
+    if (str) {
+        sscanf(str,"%f %f %f %f %f %f %f",
+                &svi->freq,
+                &svi->a,
+                &svi->d,
+                &svi->s,
+                &svi->r,
+                &svi->max_amp,
+                &svi->sus_amp);
+    }
     return err_NONE;
 }
 
@@ -42,13 +44,13 @@ static inline f64_t adsr_amp(f64_t cur_tm, f64_t a, f64_t d, f64_t s, f64_t r, f
     if (cur_tm < a) {
         return max_amp * (cur_tm/a);
     }
-    if (cur_tm < a+d) {
+    if (cur_tm < (a+d)) {
         return sus_amp + (max_amp - sus_amp) * (1. - (cur_tm - a)/d);
     }
-    if (cur_tm < a+d+s) {
+    if (cur_tm < (a+d+s)) {
         return sus_amp;
     }
-    if (cur_tm < a+d+s+r) {
+    if (cur_tm < (a+d+s+r)) {
         return sus_amp * (1. - (cur_tm - a - d - s)/r);
     }
     return 0;
@@ -61,17 +63,17 @@ err_t synth_vc_proc(synth_vc_t *s, synth_vc_proc_t *sp, f64_t *out, size_t nsamp
     f64_t smp_inc = s->freq/(sp->sr/sp->len),
           smp_cur = s->_phs*sp->len,
           tm_cur = s->_tm;
-    f64_t t_s = sp->sr; /* sample period */
+    f64_t t_s = 1./sp->sr; /* sample period */
     for (n = 0; n < nsamps; n++) {
         if (tm_cur > s->_tot_tm) {
             s->playing = 0;
             break;
         }
         /* linear interpolation */
-        f64_t diff = smp_cur - (size_t)smp_cur;
         size_t nxt_smp = (size_t)smp_cur + 1;
-        *out += (sp->wt[(size_t)smp_cur] 
-                + sp->wt[nxt_smp >= sp->len ? 0 : nxt_smp]*diff)
+        f64_t diff = smp_cur - (size_t)smp_cur;
+        f64_t ydiff = sp->wt[nxt_smp >= sp->len ? 0 : nxt_smp] - sp->wt[(size_t)smp_cur];
+        *out += (sp->wt[(size_t)smp_cur] + ydiff*diff)
             * adsr_amp(tm_cur,s->env.a,s->env.d,s->env.s,s->env.r,s->env.max_amp,s->env.sus_amp);
         tm_cur += t_s;
         out++;
@@ -83,6 +85,7 @@ err_t synth_vc_proc(synth_vc_t *s, synth_vc_proc_t *sp, f64_t *out, size_t nsamp
             smp_cur += sp->len;
         }
     }
+    s->_tm = tm_cur;
     s->_phs = smp_cur / sp->len;
     return err_NONE;
 }

@@ -26,6 +26,8 @@
 #define WAVETABLE_LEN 4096
 #define WAVETABLE_NHARM 10 
 #define NUM_VOICES 10 
+#define SEQ_LEN 16 
+#define N_EVENTS_PER_TICK 8
 
 static volatile int done = 0;
 
@@ -58,8 +60,8 @@ static const int nvoices = NUM_VOICES;
 static synth_vc_t voices[NUM_VOICES];
 
 static f64_t *wt;
-int seq_time_rollover;
-f64_t seq_time = 0., tot_seq_time;
+int seq_time_rollover = 0;
+f64_t seq_time = 0., tot_seq_time, tick_len;
 seq_t seq;
 
 //jack_port_t *input_port;
@@ -104,6 +106,7 @@ static void parse_mess(char *buf)
             _F(tmp);
             return;
         }
+        tmp->played = 1; /* don't play until the next time around */
         if (seq_add_event(&seq,tmp,tick) != err_NONE) {
             _F(tmp);
         }
@@ -111,6 +114,22 @@ static void parse_mess(char *buf)
     if (strcmp(buf,"clear") == 0) {
         fprintf(stderr,"got clear\n");
         seq_remove_all_events(&seq);
+    }
+    if (strcmp(buf,"tempo") == 0) {
+        fprintf(stderr,"got tempo\n");
+        char *lasts2;
+        if (lasts) {
+            strtok_r(lasts,sep2,&lasts2);
+            fprintf(stderr,"parameters = %s\n",lasts);
+        }
+        f64_t tempo_s = 1.; /* paranoid, don't set tempo to garbage */
+        if (sscanf(lasts,"%f",&tempo_s) == 1) {
+            tick_len = tempo_s * (f64_t)jack_get_sample_rate(client);
+        }
+    }
+    if (strcmp(buf,"quit") == 0) {
+        fprintf(stderr,"quitting\n");
+        done = 1;
     }
 }
 
@@ -134,7 +153,7 @@ process (jack_nframes_t nframes, void *arg)
         }
         /* first play all scheduled events that haven't yet been played */
         f64_t cursor_time = 0;
-        for (cursor_time = 0; cursor_time += seq.tick_len; cursor_time < seq_time) {
+        for (cursor_time = 0; cursor_time < seq_time; cursor_time += seq.tick_len) {
             size_t seq_idx = (size_t)cursor_time/seq.tick_len;
             seq_event_t **se;
             se = seq_get_events_at_tick(&seq,seq_idx);
@@ -147,7 +166,7 @@ process (jack_nframes_t nframes, void *arg)
                     /* find free voice */
                     int free_voice = -1, o;
                     for (o = 0; o < nvoices; o++) {
-                        if (!voices[n].playing) {
+                        if (!voices[o].playing) {
                             free_voice = o;
                             o = nvoices; /* break for loop */
                         }
@@ -175,36 +194,14 @@ process (jack_nframes_t nframes, void *arg)
         seq_time += tick_len*num_seq_inc_miss;
         if (seq_time >= tot_seq_time) {
             seq_time_rollover = 1;
-            seq_time = seq_time % tot_seq_time;
+            while (seq_time >= tot_seq_time) {
+                seq_time -= tot_seq_time;
+            }
         }
         num_seq_inc_miss = 1;
         pthread_mutex_unlock(&seq_inc_mutex);
     } else {
         num_seq_inc_miss++;
-    }
-    if (pthread_mutex_trylock(&voice_mutex)) {
-        while (svci) {
-            /* find free voice */
-            int free_voice = -1;
-            for (n = 0; n < nvoices; n++) {
-                if (!voices[n].playing) {
-                    free_voice = n;
-                    n = nvoices; /* break for loop */
-                }
-            }
-            if (free_voice >= 0) {
-                /* activate this synth */
-                synth_vc_init(&voices[free_voice],
-                        (synth_vc_init_t*)svci);
-                voices[free_voice].playing = 1;
-            }
-            /* if wasn't activated, we still discard it */
-            synth_vc_init_list_t *tmp = svci->next;
-            svci->next = svci_used;
-            svci_used = svci;
-            svci = tmp;
-        }
-        pthread_mutex_unlock(&voice_mutex);
     }
 	out = jack_port_get_buffer (output_port, nframes);
     _MZ(out,jack_default_audio_sample_t,nframes);
@@ -236,6 +233,7 @@ main (int argc, char *argv[])
 	jack_status_t status;
 
     _MZ(voices,synth_vc_t,NUM_VOICES);
+    /* after this voices only touched in process thread */
 	
 #ifndef DEBUG
 	/* open a client connection to the JACK server */
@@ -283,6 +281,12 @@ main (int argc, char *argv[])
         .wt = wt,
         .len = WAVETABLE_LEN,
     };
+    
+    /* each tick lasts 1 second */
+    seq_init(&seq,SEQ_LEN,N_EVENTS_PER_TICK,(f64_t)jack_get_sample_rate(client));
+
+    tot_seq_time = seq.tick_len * seq._seq_len;
+    tick_len = seq.tick_len;
 
 	/* create two ports */
 
@@ -410,11 +414,13 @@ main (int argc, char *argv[])
         pthread_mutex_unlock(&seq_inc_mutex);
     }
 
-    _F(wt);
 	close(sockfd);
 #ifndef DEBUG
 	jack_client_close (client);
 #endif
+    _F(wt);
+    seq_remove_all_events(&seq);
+    seq_destroy(&seq);
 	exit (0);
 }
 
